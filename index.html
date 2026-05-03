@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monte Carlo · Stock Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,700&family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0b0d;
+    --bg-soft: #14161a;
+    --ink: #ecedef;
+    --ink-dim: #b6b9c2;
+    --ink-muted: #6a6e78;
+    --line: #20232a;
+    --line-soft: #181a20;
+    --accent: #00ffa3;
+    --accent-2: #ff3b6b;
+    --warn: #ffb547;
+    --cool: #5eaeff;
+    --bull: #00ffa3;
+    --bear: #ff3b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--ink); font-family: 'Fraunces', serif; overflow-x: hidden; }
+  body {
+    background-image:
+      radial-gradient(at 8% 4%, rgba(0,255,163,0.06), transparent 40%),
+      radial-gradient(at 95% 95%, rgba(255,59,107,0.05), transparent 45%);
+    min-height: 100vh;
+    padding: 28px 36px 50px;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0;
+    pointer-events: none; opacity: 0.05; z-index: 1;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.7'/></svg>");
+  }
+  .wrap { max-width: 1360px; margin: 0 auto; position: relative; z-index: 2; }
+
+  /* HEADER */
+  header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 24px;
+  }
+  .brand {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: var(--ink-muted);
+  }
+  .brand span { color: var(--accent); }
+  h1 {
+    font-weight: 300;
+    font-size: clamp(40px, 6vw, 76px);
+    line-height: 0.92; letter-spacing: -0.03em;
+    margin-top: 18px;
+  }
+  h1 em { font-style: italic; font-weight: 400; color: var(--accent); }
+  .tagline {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--ink-muted);
+    text-transform: uppercase; letter-spacing: 0.15em;
+    text-align: right; line-height: 1.7;
+  }
+
+  /* TICKER ROW */
+  .ticker-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr 1fr 0.9fr;
+    gap: 0;
+    border: 1px solid var(--line);
+    margin-bottom: 24px;
+    background: rgba(20,22,26,0.5);
+    backdrop-filter: blur(8px);
+  }
+  @media (max-width: 800px) { .ticker-row { grid-template-columns: 1fr 1fr; } }
+
+  .tcell {
+    padding: 18px 22px;
+    border-right: 1px solid var(--line);
+    position: relative;
+  }
+  .tcell:last-child { border-right: none; }
+  @media (max-width: 800px) {
+    .tcell { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .tcell:nth-child(2n) { border-right: none; }
+    .tcell:nth-last-child(-n+2) { border-bottom: none; }
+  }
+  .tcell .lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.18em;
+    color: var(--ink-muted); text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .tcell .val {
+    font-size: 28px; font-weight: 300; letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .tcell .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-muted); margin-top: 6px;
+  }
+  .tcell .val em { font-style: italic; color: var(--accent); font-weight: 400; }
+
+  .ticker-input-cell {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .ticker-input-cell input {
+    background: transparent; border: none; outline: none;
+    color: var(--ink);
+    font-family: 'Fraunces', serif;
+    font-size: 32px; font-weight: 400;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid var(--line);
+    padding: 4px 0 6px;
+    text-transform: uppercase;
+    width: 100%;
+  }
+  .ticker-input-cell input:focus { border-bottom-color: var(--accent); }
+  .ticker-input-cell .quick {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .quick-btn {
+    background: transparent; border: 1px solid var(--line);
+    color: var(--ink-dim);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    padding: 4px 8px; cursor: pointer;
+    letter-spacing: 0.1em;
+    transition: all 0.15s;
+  }
+  .quick-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* MAIN GRID */
+  .grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 24px;
+  }
+  @media (max-width: 950px) {
+    .grid { grid-template-columns: 1fr; }
+    body { padding: 18px; }
+  }
+
+  .panel {
+    border: 1px solid var(--line);
+    padding: 20px 20px 22px;
+    position: relative;
+    background: rgba(20,22,26,0.4);
+    backdrop-filter: blur(6px);
+  }
+  .panel-label {
+    position: absolute; top: -10px; left: 16px;
+    background: var(--bg); padding: 0 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.2em;
+    color: var(--accent); text-transform: uppercase;
+  }
+  .panel + .panel { margin-top: 18px; }
+
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-muted);
+    text-transform: uppercase; letter-spacing: 0.14em;
+    margin-bottom: 4px;
+  }
+  .field label .v {
+    color: var(--ink); font-size: 12px;
+    letter-spacing: 0; text-transform: none;
+  }
+
+  input[type="number"], input[type="range"] {
+    width: 100%; background: transparent; border: none; color: var(--ink);
+  }
+  input[type="number"] {
+    border-bottom: 1px solid var(--line);
+    padding: 4px 0;
+    font-family: 'Fraunces', serif;
+    font-size: 18px; font-weight: 400;
+  }
+  input[type="number"]:focus { outline: none; border-bottom-color: var(--accent); }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+  input[type="range"] {
+    -webkit-appearance: none; height: 2px; background: var(--line); margin: 8px 0 4px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px; background: var(--accent);
+    border-radius: 50%; cursor: pointer; transition: transform 0.15s;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.3); }
+  input[type="range"]::-moz-range-thumb {
+    width: 14px; height: 14px; background: var(--accent);
+    border: none; border-radius: 50%; cursor: pointer;
+  }
+
+  .seg {
+    display: flex; border: 1px solid var(--line);
+    margin-top: 4px;
+  }
+  .seg button {
+    flex: 1; background: transparent; border: none;
+    color: var(--ink-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; padding: 8px 4px;
+    cursor: pointer; letter-spacing: 0.1em;
+    transition: all 0.15s;
+  }
+  .seg button:not(:last-child) { border-right: 1px solid var(--line); }
+  .seg button.active {
+    background: var(--accent); color: var(--bg); font-weight: 700;
+  }
+
+  .run-btn {
+    width: 100%; margin-top: 16px;
+    padding: 14px; background: var(--accent);
+    color: var(--bg); border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; letter-spacing: 0.25em;
+    text-transform: uppercase; cursor: pointer;
+    font-weight: 700; transition: all 0.15s;
+  }
+  .run-btn:hover { background: var(--ink); }
+  .run-btn:active { transform: scale(0.98); }
+  .run-btn:disabled { opacity: 0.5; cursor: wait; }
+  .run-btn.fetch { background: var(--cool); }
+  .run-btn.fetch:hover { background: var(--ink); }
+
+  .status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-muted);
+    margin-top: 8px; text-transform: uppercase;
+    letter-spacing: 0.12em; line-height: 1.6;
+  }
+  .status.ok { color: var(--accent); }
+  .status.err { color: var(--bear); }
+
+  /* RESULTS */
+  .results { display: flex; flex-direction: column; gap: 22px; }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid var(--line);
+  }
+  @media (max-width: 700px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    padding: 16px 18px;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .stat:nth-child(4n) { border-right: none; }
+  .stat:nth-last-child(-n+4) { border-bottom: none; }
+  @media (max-width: 700px) {
+    .stat { border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .stat:nth-child(2n) { border-right: none; }
+  }
+  .stat .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.18em;
+    color: var(--ink-muted); text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .stat .value {
+    font-size: 26px; font-weight: 300;
+    letter-spacing: -0.02em; line-height: 1;
+  }
+  .stat .value em { font-style: italic; color: var(--accent); font-weight: 400; }
+  .stat .value.bear { color: var(--bear); }
+  .stat .value.bull { color: var(--bull); }
+  .stat .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-muted); margin-top: 5px;
+  }
+
+  .chart-card {
+    border: 1px solid var(--line);
+    padding: 16px 20px 20px;
+    background: rgba(20,22,26,0.3);
+  }
+  .chart-head {
+    display: flex; justify-content: space-between;
+    align-items: baseline; margin-bottom: 10px;
+  }
+  .chart-title {
+    font-weight: 400; font-size: 20px; letter-spacing: -0.01em;
+  }
+  .chart-title em { font-style: italic; color: var(--accent); }
+  .chart-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.15em;
+    color: var(--ink-muted); text-transform: uppercase;
+  }
+  canvas { display: block; width: 100%; height: auto; }
+
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 22px;
+  }
+  @media (max-width: 1100px) { .charts-row { grid-template-columns: 1fr; } }
+
+  .empty {
+    border: 1px dashed var(--line);
+    padding: 70px 30px; text-align: center; color: var(--ink-muted);
+  }
+  .empty .big {
+    font-style: italic; font-weight: 300; font-size: 38px;
+    color: var(--ink-dim); letter-spacing: -0.02em; margin-bottom: 10px;
+  }
+  .empty .small {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    letter-spacing: 0.15em; text-transform: uppercase;
+  }
+
+  /* options panel — hidden by default, shown when option mode active */
+  .opt-section { display: none; }
+  .opt-section.show { display: block; }
+
+  .footnote {
+    margin-top: 36px; padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-muted);
+    letter-spacing: 0.1em; line-height: 1.7;
+    text-transform: uppercase;
+  }
+
+  .fade-in { animation: fadeUp 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .opt-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+
+  details summary {
+    cursor: pointer; font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-muted);
+    text-transform: uppercase; letter-spacing: 0.15em;
+    padding: 10px 0; border-top: 1px solid var(--line);
+    margin-top: 14px;
+  }
+  details summary:hover { color: var(--accent); }
+  details[open] summary { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HEADER -->
+<header>
+  <div>
+    <div class="brand">Monte Carlo · Stock Analysis Suite <span>●</span> v1.0</div>
+    <h1>Where price <em>becomes</em><br/>probability.</h1>
+  </div>
+  <div class="tagline">
+    Live data · Yahoo Finance<br/>
+    GBM Forecast · VaR · CVaR<br/>
+    Black-Scholes-style Options
+  </div>
+</header>
+
+<!-- TICKER + LIVE STATS ROW -->
+<div class="ticker-row" id="ticker-row">
+  <div class="tcell ticker-input-cell">
+    <div class="lbl">Symbol</div>
+    <input id="ticker" value="AAPL" maxlength="10" autocomplete="off" />
+    <div class="quick">
+      <button class="quick-btn" data-t="AAPL">AAPL</button>
+      <button class="quick-btn" data-t="MSFT">MSFT</button>
+      <button class="quick-btn" data-t="NVDA">NVDA</button>
+      <button class="quick-btn" data-t="TSLA">TSLA</button>
+      <button class="quick-btn" data-t="SPY">SPY</button>
+      <button class="quick-btn" data-t="BTC-USD">BTC</button>
+    </div>
+  </div>
+  <div class="tcell">
+    <div class="lbl">Current Price</div>
+    <div class="val" id="cur-price">—</div>
+    <div class="sub" id="cur-change">Awaiting fetch</div>
+  </div>
+  <div class="tcell">
+    <div class="lbl">Annualized Volatility (σ)</div>
+    <div class="val" id="cur-vol">—</div>
+    <div class="sub" id="cur-vol-sub">From historical returns</div>
+  </div>
+  <div class="tcell">
+    <div class="lbl">Annualized Drift (μ)</div>
+    <div class="val" id="cur-drift">—</div>
+    <div class="sub" id="cur-drift-sub">Historical mean log-return</div>
+  </div>
+</div>
+
+<div class="grid">
+  <!-- CONTROL PANEL -->
+  <aside>
+    <div class="panel">
+      <div class="panel-label">Data Fetch</div>
+      <div class="field">
+        <label>Lookback Window <span class="v" id="lbl-lookback">2 years</span></label>
+        <div class="seg" id="seg-lookback">
+          <button data-v="6mo">6M</button>
+          <button data-v="1y">1Y</button>
+          <button data-v="2y" class="active">2Y</button>
+          <button data-v="5y">5Y</button>
+        </div>
+      </div>
+      <button class="run-btn fetch" id="fetch-btn">Fetch Data ↓</button>
+      <div class="status" id="fetch-status">Press fetch to load Yahoo Finance data</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Simulation</div>
+      <div class="field">
+        <label>Forecast Horizon <span class="v" id="lbl-horizon">63 days · 3M</span></label>
+        <input type="range" id="horizon" min="5" max="504" value="63" />
+      </div>
+      <div class="field">
+        <label>Trials <span class="v" id="lbl-trials">5,000</span></label>
+        <input type="range" id="trials" min="500" max="20000" step="500" value="5000" />
+      </div>
+      <div class="field">
+        <label>μ Override (annual %) <span class="v" id="lbl-mu-mode">Use historical</span></label>
+        <input type="number" id="mu-override" placeholder="auto" step="0.5" />
+      </div>
+      <div class="field">
+        <label>σ Override (annual %) <span class="v" id="lbl-sigma-mode">Use historical</span></label>
+        <input type="number" id="sigma-override" placeholder="auto" step="0.5" />
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Options Pricing</div>
+      <div class="seg" style="margin-bottom: 12px;" id="seg-opt">
+        <button data-v="off" class="active">OFF</button>
+        <button data-v="call">CALL</button>
+        <button data-v="put">PUT</button>
+      </div>
+      <div class="opt-section" id="opt-fields">
+        <div class="opt-grid">
+          <div class="field">
+            <label>Strike <span class="v"></span></label>
+            <input type="number" id="strike" step="1" value="200" />
+          </div>
+          <div class="field">
+            <label>Risk-free % <span class="v"></span></label>
+            <input type="number" id="rfr" step="0.1" value="4.5" />
+          </div>
+        </div>
+        <div class="status" id="opt-status">European exercise · Black-Scholes-equivalent under GBM</div>
+      </div>
+    </div>
+
+    <button class="run-btn" id="run">Run Simulation →</button>
+    <div class="status" id="status">Fetch data, then simulate</div>
+  </aside>
+
+  <!-- RESULTS -->
+  <main class="results" id="results">
+    <div class="empty">
+      <div class="big">A thousand price paths.</div>
+      <div class="small">Fetch data · Run simulation</div>
+    </div>
+  </main>
+</div>
+
+<div class="footnote">
+  Note · Uses Geometric Brownian Motion (lognormal returns). Historical μ/σ estimated from daily log-returns. Options priced via simulated risk-neutral terminal payoffs discounted at the risk-free rate. Educational tool — not investment advice.
+</div>
+
+</div>
+
+<script>
+/* ============================================================
+   MONTE CARLO STOCK ANALYSIS
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const TRADING_DAYS = 252;
+
+let stockData = null; // { ticker, prices, dates, logReturns, mu, sigma, currentPrice, prevClose }
+let optMode = 'off';
+let lookback = '2y';
+
+/* ----- Formatting ----- */
+const fmt$ = n => {
+  if (!isFinite(n)) return '—';
+  if (Math.abs(n) >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+  if (Math.abs(n) >= 100) return '$' + n.toFixed(2);
+  return '$' + n.toFixed(2);
+};
+const fmtPct = (n, dec=1) => (n*100).toFixed(dec) + '%';
+const fmtN = n => Math.round(n).toLocaleString();
+
+/* ----- Stat helpers ----- */
+function quantile(sorted, q) {
+  const pos = (sorted.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base+1] - sorted[base]);
+  }
+  return sorted[base];
+}
+function mean(arr) {
+  let s = 0; for (let i = 0; i < arr.length; i++) s += arr[i]; return s / arr.length;
+}
+function stddev(arr, m) {
+  if (m === undefined) m = mean(arr);
+  let s = 0;
+  for (let i = 0; i < arr.length; i++) { const d = arr[i] - m; s += d*d; }
+  return Math.sqrt(s / (arr.length - 1));
+}
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/* ============================================================
+   DATA FETCH (Yahoo via CORS proxy)
+   ============================================================ */
+async function fetchStockData(ticker, range) {
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d`;
+  // Try a few proxies in case one is down
+  const proxies = [
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+  ];
+
+  let lastErr = null;
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy(yahooUrl), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (!json.chart || !json.chart.result || !json.chart.result[0]) {
+        throw new Error('No data returned');
+      }
+      const r0 = json.chart.result[0];
+      const ts = r0.timestamp;
+      const closes = r0.indicators.quote[0].close;
+      // Filter out null entries
+      const dates = [], prices = [];
+      for (let i = 0; i < ts.length; i++) {
+        if (closes[i] != null) {
+          dates.push(ts[i]);
+          prices.push(closes[i]);
+        }
+      }
+      if (prices.length < 30) throw new Error('Insufficient data points');
+      return { dates, prices, meta: r0.meta };
+    } catch (e) {
+      lastErr = e;
+      console.warn('Proxy failed:', e.message);
+    }
+  }
+  throw lastErr || new Error('All proxies failed');
+}
+
+function processStockData(raw) {
+  const { dates, prices } = raw;
+  // Daily log-returns
+  const logReturns = [];
+  for (let i = 1; i < prices.length; i++) {
+    logReturns.push(Math.log(prices[i] / prices[i-1]));
+  }
+  const dailyMean = mean(logReturns);
+  const dailyStd = stddev(logReturns, dailyMean);
+  // Annualize
+  const muAnn = dailyMean * TRADING_DAYS;
+  const sigmaAnn = dailyStd * Math.sqrt(TRADING_DAYS);
+
+  return {
+    dates, prices, logReturns,
+    mu: muAnn,
+    sigma: sigmaAnn,
+    currentPrice: prices[prices.length - 1],
+    prevClose: prices[prices.length - 2],
+  };
+}
+
+/* ============================================================
+   SIMULATION
+   ============================================================ */
+function simulate(params) {
+  const { S0, mu, sigma, days, trials, riskFreeForOptions } = params;
+  const dt = 1 / TRADING_DAYS;
+  // Two drift modes:
+  //   - Real-world drift (mu) for forecast paths
+  //   - Risk-neutral drift (r) for option pricing — re-simulate or use formula
+  const drift = (mu - 0.5 * sigma * sigma) * dt;
+  const diff = sigma * Math.sqrt(dt);
+
+  const finalPrices = new Float64Array(trials);
+  const dailyReturns = new Float64Array(trials); // for VaR — return over horizon
+  const yearlyValues = []; // [day][trial]
+  const sampleCount = Math.min(150, trials);
+  const sampleSet = new Set();
+  while (sampleSet.size < sampleCount) sampleSet.add(Math.floor(Math.random()*trials));
+  const sampledPaths = [];
+
+  // Storage: only retain quantiles per day (to avoid 5k x 252 mem) — but we'll keep
+  // a per-day percentile band by computing in passes is expensive, so store all in flat array.
+  const all = new Float64Array(trials * (days + 1));
+
+  for (let t = 0; t < trials; t++) {
+    let s = S0;
+    all[t * (days + 1) + 0] = s;
+    let path = sampleSet.has(t) ? new Array(days + 1) : null;
+    if (path) path[0] = s;
+    for (let d = 1; d <= days; d++) {
+      const z = randn();
+      s = s * Math.exp(drift + diff * z);
+      all[t * (days + 1) + d] = s;
+      if (path) path[d] = s;
+    }
+    finalPrices[t] = s;
+    if (path) sampledPaths.push(path);
+  }
+
+  // Build percentile bands per day
+  const bands = { p5: [], p25: [], p50: [], p75: [], p95: [] };
+  const dayArr = new Float64Array(trials);
+  for (let d = 0; d <= days; d++) {
+    for (let t = 0; t < trials; t++) dayArr[t] = all[t * (days+1) + d];
+    const sorted = Float64Array.from(dayArr).sort();
+    bands.p5.push(quantile(sorted, 0.05));
+    bands.p25.push(quantile(sorted, 0.25));
+    bands.p50.push(quantile(sorted, 0.50));
+    bands.p75.push(quantile(sorted, 0.75));
+    bands.p95.push(quantile(sorted, 0.95));
+  }
+
+  // Risk metrics from final prices
+  const sortedFinal = Float64Array.from(finalPrices).sort();
+  const meanFinal = mean(sortedFinal);
+  const medianFinal = quantile(sortedFinal, 0.5);
+  const finalReturns = new Float64Array(trials);
+  for (let i = 0; i < trials; i++) finalReturns[i] = finalPrices[i] / S0 - 1;
+  const sortedReturns = Float64Array.from(finalReturns).sort();
+  const var95 = -quantile(sortedReturns, 0.05); // loss at 5% tail (positive = loss)
+  const var99 = -quantile(sortedReturns, 0.01);
+  // CVaR / Expected Shortfall
+  const tailCount95 = Math.max(1, Math.floor(trials * 0.05));
+  let cvarSum = 0;
+  for (let i = 0; i < tailCount95; i++) cvarSum += sortedReturns[i];
+  const cvar95 = -(cvarSum / tailCount95);
+
+  let probUp = 0, probDown10 = 0, probUp10 = 0;
+  for (let i = 0; i < trials; i++) {
+    if (finalPrices[i] > S0) probUp++;
+    if (finalPrices[i] < S0 * 0.9) probDown10++;
+    if (finalPrices[i] > S0 * 1.1) probUp10++;
+  }
+  probUp /= trials; probDown10 /= trials; probUp10 /= trials;
+
+  return {
+    params, sortedFinal, finalPrices, sampledPaths, bands,
+    meanFinal, medianFinal,
+    p5: quantile(sortedFinal, 0.05),
+    p25: quantile(sortedFinal, 0.25),
+    p75: quantile(sortedFinal, 0.75),
+    p95: quantile(sortedFinal, 0.95),
+    var95, var99, cvar95,
+    probUp, probDown10, probUp10,
+    finalReturns: sortedReturns,
+  };
+}
+
+/* ----- Options pricing (risk-neutral simulation) ----- */
+function priceOption(params) {
+  const { S0, sigma, days, trials, strike, r, type } = params;
+  const dt = 1 / TRADING_DAYS;
+  const drift = (r - 0.5 * sigma * sigma) * dt;
+  const diff = sigma * Math.sqrt(dt);
+  const T = days / TRADING_DAYS;
+
+  let payoffSum = 0;
+  let payoffSqSum = 0;
+  const payoffs = new Float64Array(trials);
+
+  for (let t = 0; t < trials; t++) {
+    let s = S0;
+    for (let d = 0; d < days; d++) {
+      const z = randn();
+      s *= Math.exp(drift + diff * z);
+    }
+    const intrinsic = (type === 'call')
+      ? Math.max(s - strike, 0)
+      : Math.max(strike - s, 0);
+    payoffs[t] = intrinsic;
+    payoffSum += intrinsic;
+    payoffSqSum += intrinsic * intrinsic;
+  }
+  const meanPayoff = payoffSum / trials;
+  const varPayoff = payoffSqSum / trials - meanPayoff * meanPayoff;
+  const stderr = Math.sqrt(Math.max(varPayoff, 0) / trials) * Math.exp(-r * T);
+  const price = Math.exp(-r * T) * meanPayoff;
+
+  let itmCount = 0;
+  for (let i = 0; i < trials; i++) if (payoffs[i] > 0) itmCount++;
+
+  return { price, stderr, T, itmProb: itmCount / trials, meanPayoff };
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function renderResults(r, opt) {
+  const days = r.params.days;
+  const S0 = r.params.S0;
+  const horizonLabel = days < 21 ? `${days}d` : (days <= 63 ? `${days}d · ${(days/21).toFixed(1)}M` : `${days}d · ${(days/TRADING_DAYS).toFixed(2)}Y`);
+  const meanReturn = (r.meanFinal / S0) - 1;
+
+  const optBlock = opt ? `
+    <div class="chart-card fade-in" style="animation-delay: 0.05s">
+      <div class="chart-head">
+        <div class="chart-title">${r.params.optionType === 'call' ? 'Call' : 'Put'} <em>option</em> · K = ${fmt$(r.params.strike)}</div>
+        <div class="chart-meta">Risk-neutral · T = ${(opt.T*365).toFixed(0)}d</div>
+      </div>
+      <div class="stats-row" style="border:none; margin: 4px 0 0;">
+        <div class="stat" style="border:none;">
+          <div class="label">Theoretical Price</div>
+          <div class="value"><em>${fmt$(opt.price)}</em></div>
+          <div class="sub">± ${fmt$(opt.stderr*1.96)} (95% MC CI)</div>
+        </div>
+        <div class="stat" style="border:none;">
+          <div class="label">Probability ITM</div>
+          <div class="value">${fmtPct(opt.itmProb)}</div>
+          <div class="sub">Finishes in the money</div>
+        </div>
+        <div class="stat" style="border:none;">
+          <div class="label">Mean Payoff</div>
+          <div class="value">${fmt$(opt.meanPayoff)}</div>
+          <div class="sub">Undiscounted</div>
+        </div>
+        <div class="stat" style="border:none;">
+          <div class="label">Premium % of Spot</div>
+          <div class="value">${fmtPct(opt.price / S0)}</div>
+          <div class="sub">Cost to enter</div>
+        </div>
+      </div>
+    </div>
+  ` : '';
+
+  $('results').innerHTML = `
+    <div class="stats-row fade-in">
+      <div class="stat">
+        <div class="label">Median Forecast</div>
+        <div class="value"><em>${fmt$(r.medianFinal)}</em></div>
+        <div class="sub">${horizonLabel} · 50th pct</div>
+      </div>
+      <div class="stat">
+        <div class="label">Expected Return</div>
+        <div class="value ${meanReturn >= 0 ? 'bull' : 'bear'}">${meanReturn>=0?'+':''}${fmtPct(meanReturn)}</div>
+        <div class="sub">From ${fmt$(S0)}</div>
+      </div>
+      <div class="stat">
+        <div class="label">Probability of Gain</div>
+        <div class="value">${fmtPct(r.probUp)}</div>
+        <div class="sub">P(S_T > S_0)</div>
+      </div>
+      <div class="stat">
+        <div class="label">VaR (95%)</div>
+        <div class="value bear">${fmtPct(r.var95)}</div>
+        <div class="sub">5% chance of losing more</div>
+      </div>
+    </div>
+
+    <div class="stats-row fade-in" style="animation-delay: 0.05s">
+      <div class="stat">
+        <div class="label">5th Percentile</div>
+        <div class="value">${fmt$(r.p5)}</div>
+        <div class="sub">Worst 5% scenarios</div>
+      </div>
+      <div class="stat">
+        <div class="label">95th Percentile</div>
+        <div class="value">${fmt$(r.p95)}</div>
+        <div class="sub">Best 5% scenarios</div>
+      </div>
+      <div class="stat">
+        <div class="label">CVaR (95%)</div>
+        <div class="value bear">${fmtPct(r.cvar95)}</div>
+        <div class="sub">Avg loss in worst 5%</div>
+      </div>
+      <div class="stat">
+        <div class="label">Prob. > +10%</div>
+        <div class="value bull">${fmtPct(r.probUp10)}</div>
+        <div class="sub">Prob. < −10%: ${fmtPct(r.probDown10)}</div>
+      </div>
+    </div>
+
+    ${optBlock}
+
+    <div class="chart-card fade-in" style="animation-delay: 0.1s">
+      <div class="chart-head">
+        <div class="chart-title">Price <em>fan</em> · ${horizonLabel} ahead</div>
+        <div class="chart-meta">${fmtN(r.params.trials)} GBM paths</div>
+      </div>
+      <canvas id="fan" width="900" height="420"></canvas>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card fade-in" style="animation-delay: 0.15s">
+        <div class="chart-head">
+          <div class="chart-title">Terminal price <em>distribution</em></div>
+          <div class="chart-meta">At horizon</div>
+        </div>
+        <canvas id="hist" width="600" height="360"></canvas>
+      </div>
+      <div class="chart-card fade-in" style="animation-delay: 0.2s">
+        <div class="chart-head">
+          <div class="chart-title">Return <em>distribution</em></div>
+          <div class="chart-meta">% from spot</div>
+        </div>
+        <canvas id="rethist" width="600" height="360"></canvas>
+      </div>
+    </div>
+  `;
+
+  requestAnimationFrame(() => {
+    drawFanChart($('fan'), r);
+    drawHistogram($('hist'), r);
+    drawReturnHistogram($('rethist'), r);
+  });
+}
+
+/* ============================================================
+   CANVAS DRAWING
+   ============================================================ */
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function drawFanChart(canvas, r) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const padL = 70, padR = 20, padT = 24, padB = 36;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const days = r.params.days;
+  const S0 = r.params.S0;
+
+  // Add historical context: last ~60 days of actual prices on the LEFT
+  const histCount = Math.min(stockData.prices.length, 60);
+  const hist = stockData.prices.slice(stockData.prices.length - histCount);
+  const totalDays = histCount + days;
+
+  let yMin = Infinity, yMax = -Infinity;
+  for (const v of hist) { if (v < yMin) yMin = v; if (v > yMax) yMax = v; }
+  for (let i = 0; i <= days; i++) {
+    if (r.bands.p5[i] < yMin) yMin = r.bands.p5[i];
+    if (r.bands.p95[i] > yMax) yMax = r.bands.p95[i];
+  }
+  const pad = (yMax - yMin) * 0.05;
+  yMin -= pad; yMax += pad;
+
+  const xs = i => padL + (i / (totalDays - 1)) * plotW;
+  const ys = v => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  // Grid
+  ctx.font = '10px "JetBrains Mono", monospace';
+  ctx.fillStyle = '#6a6e78';
+  ctx.strokeStyle = '#20232a';
+  ctx.lineWidth = 1;
+  const ySteps = 5;
+  for (let i = 0; i <= ySteps; i++) {
+    const v = yMin + (yMax-yMin)*(i/ySteps);
+    const y = ys(v);
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w-padR, y); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillText(fmt$(v), 8, y+3);
+  }
+
+  // Vertical separator at "today"
+  const todayX = xs(histCount - 1);
+  ctx.strokeStyle = 'rgba(0,255,163,0.4)';
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath(); ctx.moveTo(todayX, padT); ctx.lineTo(todayX, h-padB); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#00ffa3';
+  ctx.fillText('TODAY', todayX + 4, padT + 12);
+
+  // X labels
+  ctx.fillStyle = '#6a6e78';
+  const xLabelSteps = 6;
+  for (let i = 0; i <= xLabelSteps; i++) {
+    const dayIdx = Math.round((i/xLabelSteps) * (totalDays-1));
+    const x = xs(dayIdx);
+    const offset = dayIdx - (histCount - 1);
+    let label;
+    if (offset === 0) label = '0';
+    else if (offset < 0) label = offset + 'd';
+    else label = '+' + offset + 'd';
+    ctx.fillText(label, x - 12, h - padB + 18);
+  }
+
+  // Historical line
+  ctx.strokeStyle = '#b6b9c2';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < histCount; i++) {
+    const x = xs(i), y = ys(hist[i]);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Sampled future paths
+  ctx.strokeStyle = 'rgba(236, 237, 239, 0.05)';
+  ctx.lineWidth = 0.8;
+  for (const path of r.sampledPaths) {
+    ctx.beginPath();
+    for (let i = 0; i <= days; i++) {
+      const x = xs(histCount - 1 + i), y = ys(path[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // 5–95 band
+  ctx.fillStyle = 'rgba(94, 174, 255, 0.10)';
+  ctx.beginPath();
+  for (let i = 0; i <= days; i++) ctx.lineTo(xs(histCount-1+i), ys(r.bands.p95[i]));
+  for (let i = days; i >= 0; i--) ctx.lineTo(xs(histCount-1+i), ys(r.bands.p5[i]));
+  ctx.closePath(); ctx.fill();
+
+  // 25–75 band
+  ctx.fillStyle = 'rgba(94, 174, 255, 0.20)';
+  ctx.beginPath();
+  for (let i = 0; i <= days; i++) ctx.lineTo(xs(histCount-1+i), ys(r.bands.p75[i]));
+  for (let i = days; i >= 0; i--) ctx.lineTo(xs(histCount-1+i), ys(r.bands.p25[i]));
+  ctx.closePath(); ctx.fill();
+
+  // Median line
+  ctx.strokeStyle = '#00ffa3';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= days; i++) {
+    const x = xs(histCount - 1 + i), y = ys(r.bands.p50[i]);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Spot line
+  ctx.strokeStyle = 'rgba(236, 237, 239, 0.3)';
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.moveTo(padL, ys(S0)); ctx.lineTo(w-padR, ys(S0));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Strike line if option
+  if (r.params.optionType !== 'off' && r.params.strike) {
+    ctx.strokeStyle = 'rgba(255, 181, 71, 0.6)';
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(padL, ys(r.params.strike)); ctx.lineTo(w-padR, ys(r.params.strike));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffb547';
+    ctx.fillText('STRIKE', padL + 6, ys(r.params.strike) - 4);
+  }
+
+  // Legend
+  let lx = padL + 70;
+  ctx.fillStyle = '#b6b9c2';
+  ctx.fillRect(lx, padT + 4, 12, 1.5);
+  ctx.fillStyle = '#6a6e78';
+  ctx.fillText('Historical', lx + 16, padT + 9);
+  lx += 90;
+  ctx.fillStyle = '#00ffa3';
+  ctx.fillRect(lx, padT + 4, 12, 2);
+  ctx.fillStyle = '#6a6e78';
+  ctx.fillText('Median', lx + 16, padT + 9);
+  lx += 70;
+  ctx.fillStyle = 'rgba(94, 174, 255, 0.5)';
+  ctx.fillRect(lx, padT + 2, 12, 6);
+  ctx.fillStyle = '#6a6e78';
+  ctx.fillText('25–75 / 5–95', lx + 16, padT + 9);
+}
+
+function drawHistogram(canvas, r) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const padL = 60, padR = 16, padT = 20, padB = 36;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const data = r.sortedFinal;
+  const lo = quantile(data, 0.01);
+  const hi = quantile(data, 0.99);
+  const bins = 36;
+  const bw = (hi - lo) / bins;
+  const counts = new Array(bins).fill(0);
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] < lo || data[i] > hi) continue;
+    let b = Math.floor((data[i] - lo) / bw);
+    if (b >= bins) b = bins - 1;
+    counts[b]++;
+  }
+  const maxC = Math.max(...counts);
+  const S0 = r.params.S0;
+
+  ctx.font = '10px "JetBrains Mono", monospace';
+  ctx.fillStyle = '#6a6e78';
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi-lo)*(i/4);
+    const x = padL + (i/4)*plotW;
+    ctx.fillText(fmt$(v), x - 16, h - padB + 18);
+  }
+
+  // Bars — color by sign of return vs spot
+  for (let i = 0; i < bins; i++) {
+    const binCenter = lo + bw * (i + 0.5);
+    const barH = (counts[i] / maxC) * plotH;
+    const x = padL + (i / bins) * plotW;
+    const wb = (plotW / bins) - 2;
+    ctx.fillStyle = binCenter >= S0
+      ? `rgba(0, 255, 163, ${0.35 + 0.5*(counts[i]/maxC)})`
+      : `rgba(255, 59, 107, ${0.35 + 0.5*(counts[i]/maxC)})`;
+    ctx.fillRect(x, h - padB - barH, wb, barH);
+  }
+
+  // Spot line
+  if (S0 >= lo && S0 <= hi) {
+    const sx = padL + ((S0 - lo)/(hi-lo))*plotW;
+    ctx.strokeStyle = 'rgba(236, 237, 239, 0.6)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(sx, padT); ctx.lineTo(sx, h-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ecedef';
+    ctx.fillText('SPOT ' + fmt$(S0), sx + 4, padT + 10);
+  }
+
+  // Median line
+  if (r.medianFinal >= lo && r.medianFinal <= hi) {
+    const mx = padL + ((r.medianFinal - lo)/(hi-lo))*plotW;
+    ctx.strokeStyle = '#00ffa3';
+    ctx.beginPath(); ctx.moveTo(mx, padT); ctx.lineTo(mx, h-padB); ctx.stroke();
+    ctx.fillStyle = '#00ffa3';
+    ctx.fillText('MEDIAN', mx + 4, padT + 22);
+  }
+
+  // Strike line if option
+  if (r.params.optionType !== 'off' && r.params.strike >= lo && r.params.strike <= hi) {
+    const kx = padL + ((r.params.strike - lo)/(hi-lo))*plotW;
+    ctx.strokeStyle = '#ffb547';
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath(); ctx.moveTo(kx, padT); ctx.lineTo(kx, h-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ffb547';
+    ctx.fillText('STRIKE', kx + 4, h - padB - 6);
+  }
+}
+
+function drawReturnHistogram(canvas, r) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const padL = 60, padR = 16, padT = 20, padB = 36;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const data = r.finalReturns;
+  const lo = quantile(data, 0.01);
+  const hi = quantile(data, 0.99);
+  const bins = 36;
+  const bw = (hi - lo) / bins;
+  const counts = new Array(bins).fill(0);
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] < lo || data[i] > hi) continue;
+    let b = Math.floor((data[i] - lo) / bw);
+    if (b >= bins) b = bins - 1;
+    counts[b]++;
+  }
+  const maxC = Math.max(...counts);
+
+  ctx.font = '10px "JetBrains Mono", monospace';
+  ctx.fillStyle = '#6a6e78';
+  for (let i = 0; i <= 4; i++) {
+    const v = lo + (hi-lo)*(i/4);
+    const x = padL + (i/4)*plotW;
+    ctx.fillText((v*100).toFixed(0) + '%', x - 12, h - padB + 18);
+  }
+
+  for (let i = 0; i < bins; i++) {
+    const binCenter = lo + bw * (i + 0.5);
+    const barH = (counts[i] / maxC) * plotH;
+    const x = padL + (i / bins) * plotW;
+    const wb = (plotW / bins) - 2;
+    ctx.fillStyle = binCenter >= 0
+      ? `rgba(0, 255, 163, ${0.35 + 0.5*(counts[i]/maxC)})`
+      : `rgba(255, 59, 107, ${0.35 + 0.5*(counts[i]/maxC)})`;
+    ctx.fillRect(x, h - padB - barH, wb, barH);
+  }
+
+  // Zero line
+  if (0 >= lo && 0 <= hi) {
+    const zx = padL + ((0 - lo)/(hi-lo))*plotW;
+    ctx.strokeStyle = 'rgba(236, 237, 239, 0.5)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(zx, padT); ctx.lineTo(zx, h-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ecedef';
+    ctx.fillText('0%', zx + 4, padT + 10);
+  }
+
+  // VaR 95 line (negative)
+  const varRet = -r.var95;
+  if (varRet >= lo && varRet <= hi) {
+    const vx = padL + ((varRet - lo)/(hi-lo))*plotW;
+    ctx.strokeStyle = '#ff3b6b';
+    ctx.setLineDash([5, 3]);
+    ctx.beginPath(); ctx.moveTo(vx, padT); ctx.lineTo(vx, h-padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#ff3b6b';
+    ctx.fillText('VaR 95', vx + 4, padT + 22);
+  }
+}
+
+/* ============================================================
+   UI WIRING
+   ============================================================ */
+
+// Lookback segment
+document.querySelectorAll('#seg-lookback button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#seg-lookback button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    lookback = b.dataset.v;
+    const labels = { '6mo': '6 months', '1y': '1 year', '2y': '2 years', '5y': '5 years' };
+    $('lbl-lookback').textContent = labels[lookback];
+  });
+});
+
+// Option mode segment
+document.querySelectorAll('#seg-opt button').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('#seg-opt button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    optMode = b.dataset.v;
+    $('opt-fields').classList.toggle('show', optMode !== 'off');
+    if (optMode !== 'off' && stockData) {
+      $('strike').value = Math.round(stockData.currentPrice).toString();
+    }
+  });
+});
+
+// Quick ticker buttons
+document.querySelectorAll('.quick-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    $('ticker').value = b.dataset.t;
+  });
+});
+
+// Live label updates
+$('horizon').addEventListener('input', () => {
+  const d = +$('horizon').value;
+  let lbl = `${d} days`;
+  if (d <= 21) lbl = `${d}d · ${(d/21).toFixed(1)}M`;
+  else if (d <= 63) lbl = `${d}d · ${(d/21).toFixed(0)}M`;
+  else lbl = `${d}d · ${(d/TRADING_DAYS).toFixed(2)}Y`;
+  $('lbl-horizon').textContent = lbl;
+});
+$('trials').addEventListener('input', () => {
+  $('lbl-trials').textContent = Number($('trials').value).toLocaleString();
+});
+$('mu-override').addEventListener('input', () => {
+  $('lbl-mu-mode').textContent = $('mu-override').value === '' ? 'Use historical' : 'Override';
+});
+$('sigma-override').addEventListener('input', () => {
+  $('lbl-sigma-mode').textContent = $('sigma-override').value === '' ? 'Use historical' : 'Override';
+});
+
+// Fetch button
+$('fetch-btn').addEventListener('click', async () => {
+  const ticker = $('ticker').value.trim().toUpperCase();
+  if (!ticker) { $('fetch-status').textContent = 'Enter a ticker'; $('fetch-status').className='status err'; return; }
+  $('ticker').value = ticker;
+  $('fetch-btn').disabled = true;
+  $('fetch-btn').textContent = 'Fetching...';
+  $('fetch-status').textContent = `Loading ${ticker} (${lookback}) from Yahoo Finance...`;
+  $('fetch-status').className = 'status';
+
+  try {
+    const raw = await fetchStockData(ticker, lookback);
+    stockData = processStockData(raw);
+    stockData.ticker = ticker;
+
+    // Update top row
+    const change = (stockData.currentPrice - stockData.prevClose) / stockData.prevClose;
+    $('cur-price').innerHTML = `<em>${fmt$(stockData.currentPrice)}</em>`;
+    $('cur-change').textContent = `${change>=0?'+':''}${(change*100).toFixed(2)}% prev close`;
+    $('cur-change').style.color = change >= 0 ? 'var(--bull)' : 'var(--bear)';
+    $('cur-vol').textContent = (stockData.sigma*100).toFixed(1) + '%';
+    $('cur-vol-sub').textContent = `${stockData.logReturns.length} daily returns`;
+    $('cur-drift').textContent = (stockData.mu*100).toFixed(1) + '%';
+    $('cur-drift-sub').textContent = `Annualized · ${lookback}`;
+
+    // Auto-fill strike if option mode on
+    if (optMode !== 'off') {
+      $('strike').value = Math.round(stockData.currentPrice).toString();
+    }
+
+    $('fetch-status').textContent = `${ticker} loaded · ${stockData.prices.length} bars · σ ${(stockData.sigma*100).toFixed(1)}% · μ ${(stockData.mu*100).toFixed(1)}%`;
+    $('fetch-status').className = 'status ok';
+    $('status').textContent = 'Ready to simulate';
+  } catch (e) {
+    $('fetch-status').textContent = 'Fetch failed: ' + (e.message || 'check ticker / network');
+    $('fetch-status').className = 'status err';
+    console.error(e);
+  } finally {
+    $('fetch-btn').disabled = false;
+    $('fetch-btn').textContent = 'Fetch Data ↓';
+  }
+});
+
+// Run button
+$('run').addEventListener('click', () => {
+  if (!stockData) {
+    $('status').textContent = 'Fetch data first';
+    $('status').className = 'status err';
+    return;
+  }
+
+  const muOver = $('mu-override').value === '' ? null : Number($('mu-override').value)/100;
+  const sigOver = $('sigma-override').value === '' ? null : Number($('sigma-override').value)/100;
+
+  const params = {
+    S0: stockData.currentPrice,
+    mu: muOver !== null ? muOver : stockData.mu,
+    sigma: sigOver !== null ? sigOver : stockData.sigma,
+    days: Number($('horizon').value),
+    trials: Number($('trials').value),
+    optionType: optMode,
+    strike: Number($('strike').value),
+    rfr: Number($('rfr').value)/100,
+  };
+
+  $('run').disabled = true;
+  $('run').textContent = 'Simulating...';
+  $('status').textContent = `Running ${params.trials.toLocaleString()} paths × ${params.days}d`;
+  $('status').className = 'status';
+
+  setTimeout(() => {
+    const t0 = performance.now();
+    const r = simulate(params);
+    let opt = null;
+    if (optMode !== 'off') {
+      opt = priceOption({
+        S0: params.S0, sigma: params.sigma, days: params.days,
+        trials: params.trials, strike: params.strike,
+        r: params.rfr, type: optMode,
+      });
+    }
+    const t1 = performance.now();
+    renderResults(r, opt);
+    $('run').disabled = false;
+    $('run').textContent = 'Run Simulation →';
+    $('status').textContent = `Done · ${(t1-t0).toFixed(0)}ms`;
+    $('status').className = 'status ok';
+  }, 30);
+});
+
+// Initial labels
+$('horizon').dispatchEvent(new Event('input'));
+</script>
+</body>
+</html>
